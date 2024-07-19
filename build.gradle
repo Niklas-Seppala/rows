@@ -1,0 +1,30 @@
+plugins {
+    id 'java'
+}
+
+group = 'org.ns'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.9.1')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+tasks.withType(JavaCompile).each {
+    it.options.compilerArgs.add('--enable-preview')
+}
+tasks.withType(JavaExec).configureEach {
+    jvmArgs += "-ea"
+    jvmArgs += "--enable-preview"
+    //jvmArgs += "-Xlog:gc"
+    jvmArgs += "-Xmx2G"
+    jvmArgs += "-Xms1G"
+}
