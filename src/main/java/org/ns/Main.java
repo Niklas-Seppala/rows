@@ -110,7 +110,7 @@ public class Main {
         @Override
         public void run() {
             long cursor = start;
-            if (this.order != FIRST) {
+            if (this.order != FIRST) { // TODO: Just check if previousRunner is null
                 // Seek the real start position. File mapping is partitioned by bytes,
                 // not by lines:
                 //      1. Rewind until newline is found
