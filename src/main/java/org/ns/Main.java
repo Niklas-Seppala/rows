@@ -129,7 +129,7 @@ public class Main {
             while (cursor < end) {
                 byte c = mmap.get(ValueLayout.JAVA_BYTE, cursor++);
                 if (c != NEWLINE) {
-                    assert bufferCursor + 1 < BUFFER_SIZE : "read-buffer overflow";
+                    assert bufferCursor < BUFFER_SIZE : "read-buffer overflow";
                     buffer[bufferCursor++] = c;
                 } else {
                     parse(bufferCursor, ++count);
