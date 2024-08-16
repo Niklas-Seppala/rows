@@ -1,6 +1,5 @@
 package org.ns;
 
-import javax.swing.table.JTableHeader;
 import java.io.*;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -14,7 +13,6 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
     static final byte NEWLINE = 10;
@@ -25,40 +23,42 @@ public class Main {
     private static final int FIRST = 0;
 
     static class Temperature {
-        float high; float mean; float low; float avg; float sum;
+        float high; double mean; float low; double sum; int count;
 
         public Temperature(float initial) {
-            this.mean = this.sum = this.avg = this.low = this.high = initial;
+            this.sum = this.mean = this.low = this.high = initial;
+            this.count = 1;
         }
 
         public Temperature consume(Temperature other) {
             if (other.high > this.high) this.high = other.high;
             if (other.low < this.low) this.low = other.low;
+            this.sum += other.sum;
+            this.count += other.count;
+            this.mean = sum / count;
             return this;
         }
 
-        public  void consume(float temperature) {
+        public Temperature consume(float temperature) {
             if (temperature > this.high) this.high = temperature;
             if (temperature < this.low) this.low = temperature;
+            this.sum += temperature;
+            this.count++;
+            return this;
         }
 
         @Override
         public String toString() {
-            return "Temperature{" +
-                    "high=" + high +
-                    ", low=" + low +
-                    '}';
+            return "%.2f/%.2f/%.2f".formatted(high, mean, low);
         }
     }
 
     static class Runner implements Runnable {
         private final long start;
         private long end;
-
         public synchronized void setRewind(int offset) {
             this.end -= offset;
         }
-
         private final BlockingQueue<Map<String, Temperature>> resultQueue;
         private final MemorySegment mmap;
         private final byte[] buffer = new byte[BUFFER_SIZE];
@@ -66,8 +66,7 @@ public class Main {
         private final Runner previousRunner;
         private final int order;
 
-        Runner(long start, long end, long[] results,
-               BlockingQueue<Map<String, Temperature>> resultQueue,
+        Runner(long start, long end, BlockingQueue<Map<String, Temperature>> resultQueue,
                MemorySegment mmap, Runner previousRunner, int order) {
             this.start = start;
             this.end = end;
@@ -102,8 +101,10 @@ public class Main {
             assert city != null;
             assert temperature != Integer.MIN_VALUE;
             final float temp = temperature;
-            Temperature value = map.computeIfAbsent(city, (k) -> new Temperature(temp));
-            value.consume(temp);
+            map.compute(city, (k, v) -> {
+                if (v == null) return new Temperature(temp);
+                return v.consume(temp);
+            });
         }
 
         @Override
@@ -126,6 +127,7 @@ public class Main {
             int bufferCursor = 0;
             int count = 0;
             while (cursor < end) {
+                assert bufferCursor < BUFFER_SIZE : "Overflow";
                 byte c = mmap.get(ValueLayout.JAVA_BYTE, cursor++);
                 if (c != NEWLINE) {
                     buffer[bufferCursor++] = c;
@@ -150,18 +152,15 @@ public class Main {
                 StandardOpenOption.READ)) {
             Thread[] runners = new Thread[threads];
 
-            long[] results = new long[threads];
             final MemorySegment mmap = channel.map(FileChannel.MapMode.READ_ONLY,
                     0,
                     channel.size(),
                     Arena.global());
-
             long segment = 0;
             long segmentSize = channel.size() / threads;
             Runner prevRunner = null;
             for (int i = 0; i < threads; i++) {
-                Runner runner = new Runner(segment, segment + segmentSize,
-                        results, resQueue, mmap, prevRunner, i);
+                Runner runner = new Runner(segment, segment + segmentSize, resQueue, mmap, prevRunner, i);
                 runners[i] = new Thread(runner);
                 runners[i].start();
                 segment += segmentSize;
@@ -172,9 +171,10 @@ public class Main {
             for (int i = 0; i < threads; i++) {
                 Map<String, Temperature> result =  resQueue.poll(120, TimeUnit.SECONDS);
                 assert result != null;
-                result.entrySet().stream().parallel().forEach((e) -> finalResult.merge(e.getKey(), e.getValue(), Temperature::consume));
+                result.entrySet().stream().parallel().forEach((e) -> finalResult.merge(e.getKey(), e.getValue(),
+                        Temperature::consume));
             }
-            finalResult.forEach((city, temperature) -> System.out.println(city + ": " + temperature));
+            finalResult.forEach((city, temperature) -> System.out.println(city + "=" + temperature));
         }
     }
 }
