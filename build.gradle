@@ -10,6 +10,7 @@ repositories {
 }
 
 dependencies {
+    implementation 'org.jetbrains:annotations:24.0.0'
     testImplementation platform('org.junit:junit-bom:5.9.1')
     testImplementation 'org.junit.jupiter:junit-jupiter'
 }
@@ -18,13 +19,67 @@ test {
     useJUnitPlatform()
 }
 
+jar {
+    doLast {
+        copy {
+            from 'build/libs/'
+            into '../rowsbench/build/libs'
+        }
+    }
+}
+
 tasks.withType(JavaCompile).each {
     it.options.compilerArgs.add('--enable-preview')
 }
 tasks.withType(JavaExec).configureEach {
     jvmArgs += "-ea"
     jvmArgs += "--enable-preview"
+    jvmArgs += "--enable-preview"
     //jvmArgs += "-Xlog:gc"
     jvmArgs += "-Xmx2G"
     jvmArgs += "-Xms1G"
 }
+
+
+def CWD = '../rowsbench'
+//def MOD_ACCS = '--enable-native-access=ALL-UNNAMED'
+def PREVIEW = '--enable-preview'
+def MAIN_CLASS = 'org.openjdk.jmh.Main'
+//def MAIN_CLASS = 'org.nse.benchmark.Main'
+def XMX = '-Xmx512M'
+
+def PROF = "-prof"
+def GC_PROF = 'gc'
+def STACK_PROF = 'stack'
+
+/**
+ * Creates JMH uber-jar, and runs it.
+ */
+tasks.register('benchmark', Task) {
+    doFirst {
+        exec {
+            workingDir CWD
+            commandLine 'mvn'
+            args '--quiet', 'clean', 'verify'
+        }
+    }
+    doLast {
+        println('----------------------------------------------------------')
+        println('**                  Running benchmarks                  **')
+        println('----------------------------------------------------------')
+        FileCollection runtimeClasspath = configurations.runtimeClasspath
+        exec {
+            workingDir CWD
+            commandLine 'java'
+            args PREVIEW,
+                    XMX,
+                    '-cp', "target/benchmarks.jar:build/libs/*:${runtimeClasspath.asPath}",
+                    MAIN_CLASS,
+                    PROF, STACK_PROF
+        }
+        println('\n\n')
+    }
+}
+
+
+benchmark.dependsOn('jar')
